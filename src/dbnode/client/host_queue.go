@@ -117,7 +117,7 @@ func newHostQueue(
 		opsArrayLen     = _defaultHostQueueOpsArraySize
 		opArrayPoolSize = opts.HostQueueOpsArrayPoolSize()
 		opArrayPoolOpts = pool.NewObjectPoolOptions().
-				SetInstrumentOptions(
+			SetInstrumentOptions(
 				opts.InstrumentOptions().SetMetricsScope(scope.SubScope("op-array-pool")),
 			).
 			SetSize(int(opArrayPoolSize)).
@@ -128,6 +128,8 @@ func newHostQueue(
 		// for static pools, keep channel buffer size the same as pool size to preserve backwards-compat
 		opsArrayLen = int(opArrayPoolSize)
 	}
+
+	fmt.Println("HostQueueOpsFlushSize ", opts.HostQueueOpsFlushSize(), "WriteBatchSize ", opts.WriteBatchSize())
 
 	opArrayPoolElemCapacity := int(math.Max(float64(opts.HostQueueOpsFlushSize()), float64(opts.WriteBatchSize())))
 	opArrayPool := newOpArrayPool(opArrayPoolOpts, opArrayPoolElemCapacity)
@@ -261,8 +263,10 @@ func (q *queue) drain() {
 			switch v := ops[i].(type) {
 			case *writeOperation:
 				if q.serverSupportsV2APIs {
+					fmt.Println("draining write operation v2")
 					currV2WriteReq, currV2WriteOps = q.drainWriteOpV2(v, currV2WriteReq, currV2WriteOps, ops[i])
 				} else {
+					fmt.Println("draining write operation v1")
 					currWriteOpsByNamespace = q.drainWriteOpV1(v, currWriteOpsByNamespace, ops[i])
 				}
 			case *writeTaggedOperation:
@@ -281,6 +285,7 @@ func (q *queue) drain() {
 				q.asyncTruncate(v)
 			default:
 				completionFn := ops[i].CompletionFn()
+				fmt.Println("completionFn ", completionFn)
 				completionFn(nil, errQueueUnknownOperation(q.host.ID()))
 			}
 		}
@@ -354,6 +359,8 @@ func (q *queue) drainWriteOpV1(
 	}
 
 	currWriteOpsByNamespace.appendAt(idx, op, &v.request)
+
+	fmt.Println("currWriteOpsByNamespace ", currWriteOpsByNamespace)
 
 	if currWriteOpsByNamespace.lenAt(idx) == q.opts.WriteBatchSize() {
 		// Reached write batch limit, write async and reset.
